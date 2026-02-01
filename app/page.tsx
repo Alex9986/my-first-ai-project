@@ -1,106 +1,151 @@
- "use client"
+"use client"
 
- import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
- const Home: React.FC = () => {
-   const [messageHistory, setMessageHistory] = useState<string[]>([]);
-   const [inputMessage, setInputMessage] = useState<string>('');
-   const [isButtonDisabled, setIsButtonDisabled] = useState<boolean>(false);
-   const messagesEndRef = useRef<HTMLDivElement>(null);
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
-   const scrollToBottom = () => {
+const Home: React.FC = () => {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: 'assistant',
+      content: 'Hello! I am your AI assistant. How can I help you today?'
+    }
+  ]);
+  const [inputMessage, setInputMessage] = useState<string>('');
+  const [isButtonDisabled, setIsButtonDisabled] = useState<boolean>(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-   useEffect(() => {
+  useEffect(() => {
     scrollToBottom();
-   }, [messageHistory]);
- 
-   const askTheAI = async () => {
-     if (inputMessage.trim() === '') return;
- 
-     try {
-       setIsButtonDisabled(true);
- 
-       const response = await fetch('/api/openai', {
-         method: 'POST',
-         headers: {
-           'Content-Type': 'application/json',
-         },
-         body: JSON.stringify({ query: inputMessage }),
-       });
- 
-       if (!response.ok) {
-         throw new Error('Request failed');
-       }
- 
-       const data = await response.json();
- 
-       setMessageHistory((prevHistory) => [
-         ...prevHistory,
-         `User: ${inputMessage}`,
-         `Assistant: ${data.response}`,
-       ]);
- 
-       setInputMessage('');
-     } catch (error) {
-       console.error('Error making the API call:', error);
-     } finally {
-       setIsButtonDisabled(false);
-     }
-   };
- 
-   return (
+  }, [messages]);
+
+  const askTheAI = async () => {
+    if (inputMessage.trim() === '') return;
+
+    try {
+      setIsButtonDisabled(true);
+
+      // Add user message to conversation
+      const userMessage: Message = {
+        role: 'user',
+        content: inputMessage
+      };
+      
+      // Create updated messages array with new user message
+      const updatedMessages = [...messages, userMessage];
+      
+      // Update UI immediately with user message
+      setMessages(updatedMessages);
+      setInputMessage('');
+
+      // Send the entire conversation history to the API
+      const response = await fetch('/api/openai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          messages: updatedMessages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }))
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Request failed');
+      }
+
+      const data = await response.json();
+
+      // Add AI response to conversation
+      const aiMessage: Message = {
+        role: 'assistant',
+        content: data.response
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error making the API call:', error);
+      // Add error message to conversation
+      const errorMessage: Message = {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.'
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsButtonDisabled(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      askTheAI();
+    }
+  };
+
+  const clearConversation = () => {
+    setMessages([
+      {
+        role: 'assistant',
+        content: 'Hello! I am your AI assistant. How can I help you today?'
+      }
+    ]);
+  };
+
+  return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-gray-200">
       <div className="max-w-2xl w-full mx-auto p-4 md:p-6">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">AI Chat Assistant</h1>
-          <p className="text-gray-600">Ask anything and get AI-powered responses</p>
+          <p className="text-gray-600">Ask anything and get AI-powered responses with memory</p>
         </div>
         
         <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-6 border border-gray-200">
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4">
+          <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 flex justify-between items-center">
             <h2 className="text-white font-semibold text-lg">Conversation</h2>
+            {messages.length > 1 && (
+              <button
+                onClick={clearConversation}
+                className="px-3 py-1 text-sm bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors"
+              >
+                Clear Chat
+              </button>
+            )}
           </div>
           
           <div className="h-96 overflow-y-auto p-4 space-y-4">
-            {messageHistory.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                <div className="w-16 h-16 mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                  </svg>
-                </div>
-                <p className="text-lg">No messages yet</p>
-                <p className="text-sm">Start a conversation by typing below</p>
-              </div>
-            ) : (
-              <>
-                {messageHistory.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`flex ${index % 2 === 0 ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                        index % 2 === 0 
-                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-none' 
-                          : 'bg-gray-100 text-gray-800 rounded-bl-none border border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center mb-1">
-                        <div className={`w-2 h-2 rounded-full mr-2 ${index % 2 === 0 ? 'bg-blue-200' : 'bg-gray-400'}`} />
-                        <span className="text-xs font-semibold">
-                          {index % 2 === 0 ? 'You' : 'Assistant'}
-                        </span>
-                      </div>
-                      <p className="whitespace-pre-wrap">{message.split(': ')[1] || message}</p>
-                    </div>
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    message.role === 'user'
+                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-none' 
+                      : 'bg-gray-100 text-gray-800 rounded-bl-none border border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center mb-1">
+                    <div className={`w-2 h-2 rounded-full mr-2 ${message.role === 'user' ? 'bg-blue-200' : 'bg-gray-400'}`} />
+                    <span className="text-xs font-semibold">
+                      {message.role === 'user' ? 'You' : 'Assistant'}
+                    </span>
                   </div>
-                ))}
-                <div ref={messagesEndRef} />
-              </>
-            )}
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                </div>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
@@ -112,12 +157,13 @@
               placeholder="Type your message here..."
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && askTheAI()}
+              onKeyDown={handleKeyDown}
             ></textarea>
             
             <div className="flex justify-between items-center mt-4">
               <div className="text-sm text-gray-500">
                 {inputMessage.length > 0 && `${inputMessage.length} characters`}
+                {messages.length > 1 && ` • ${messages.length} messages`}
               </div>
               
               <button
@@ -148,10 +194,11 @@
         
         <div className="mt-6 text-center text-sm text-gray-500">
           <p>Press Enter to send, Shift+Enter for new line</p>
+          <p className="mt-1">The AI now remembers our conversation history!</p>
         </div>
       </div>
     </div>
   );
- };
- 
- export default Home;
+};
+
+export default Home;
